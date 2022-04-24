@@ -35,7 +35,7 @@
   mesh_bed_leveling mbl;
 
   float mesh_bed_leveling::z_offset,
-     #if ProUI
+     #if ProUIex
         mesh_bed_leveling::z_values[GRID_LIMIT][GRID_LIMIT],
         mesh_bed_leveling::index_to_xpos[GRID_LIMIT],
         mesh_bed_leveling::index_to_ypos[GRID_LIMIT];
@@ -131,9 +131,7 @@
   void mesh_bed_leveling::report_mesh() {
     SERIAL_ECHOPAIR_F(STRINGIFY(GRID_MAX_POINTS_X) "x" STRINGIFY(GRID_MAX_POINTS_Y) " mesh. Z offset: ", z_offset, 5);
     SERIAL_ECHOLNPGM("\nMeasured points:");
-    print_2d_array(GRID_MAX_POINTS_X, GRID_MAX_POINTS_Y, 5,
-      [](const uint8_t ix, const uint8_t iy) { return z_values[ix][iy]; }
-    );
+    print_2d_array(GRID_MAX_POINTS_X, GRID_MAX_POINTS_Y, 5, z_values[0]);
   }
 
 #endif // MESH_BED_LEVELING

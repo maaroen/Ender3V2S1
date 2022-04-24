@@ -75,8 +75,6 @@ void GcodeSuite::G29() {
     }
   #endif
 
-  TERN_(FULL_REPORT_TO_HOST_FEATURE, set_and_report_grblstate(M_PROBE));
-
   static int mbl_probe_index = -1;
 
   MeshLevelingState state = (MeshLevelingState)parser.byteval('S', (int8_t)MeshReport);
@@ -84,6 +82,8 @@ void GcodeSuite::G29() {
     SERIAL_ECHOLNPGM("S out of range (0-5).");
     return;
   }
+
+  TERN_(FULL_REPORT_TO_HOST_FEATURE, set_and_report_grblstate(M_PROBE));
 
   int8_t ix, iy;
   ix = iy = 0;
@@ -104,8 +104,44 @@ void GcodeSuite::G29() {
       mbl_probe_index = 0;
       if (!ui.wait_for_move) {
         queue.inject(parser.seen_test('N') ? F("G28" TERN(CAN_SET_LEVELING_AFTER_G28, "L0", "") "\nG29S2") : F("G29S2"));
-        TERN_(EXTENSIBLE_UI, ExtUI::onMeshLevelingStart());
-        TERN_(DWIN_LCD_PROUI, DWIN_MeshLevelingStart());       
+        TERN_(EXTENSIBLE_UI, ExtUI::onLevelingStart());
+        TERN_(DWIN_LCD_PROUI, DWIN_LevelingStart());       
+
+        // Position bed horizontally and Z probe vertically.
+        #if    defined(SAFE_BED_LEVELING_START_X) || defined(SAFE_BED_LEVELING_START_Y) || defined(SAFE_BED_LEVELING_START_Z) \
+            || defined(SAFE_BED_LEVELING_START_I) || defined(SAFE_BED_LEVELING_START_J) || defined(SAFE_BED_LEVELING_START_K) \
+            || defined(SAFE_BED_LEVELING_START_U) || defined(SAFE_BED_LEVELING_START_V) || defined(SAFE_BED_LEVELING_START_W)
+          xyze_pos_t safe_position = current_position;
+          #ifdef SAFE_BED_LEVELING_START_X
+            safe_position.x = SAFE_BED_LEVELING_START_X;
+          #endif
+          #ifdef SAFE_BED_LEVELING_START_Y
+            safe_position.y = SAFE_BED_LEVELING_START_Y;
+          #endif
+          #ifdef SAFE_BED_LEVELING_START_Z
+            safe_position.z = SAFE_BED_LEVELING_START_Z;
+          #endif
+          #ifdef SAFE_BED_LEVELING_START_I
+            safe_position.i = SAFE_BED_LEVELING_START_I;
+          #endif
+          #ifdef SAFE_BED_LEVELING_START_J
+            safe_position.j = SAFE_BED_LEVELING_START_J;
+          #endif
+          #ifdef SAFE_BED_LEVELING_START_K
+            safe_position.k = SAFE_BED_LEVELING_START_K;
+          #endif
+          #ifdef SAFE_BED_LEVELING_START_U
+            safe_position.u = SAFE_BED_LEVELING_START_U;
+          #endif
+          #ifdef SAFE_BED_LEVELING_START_V
+            safe_position.v = SAFE_BED_LEVELING_START_V;
+          #endif
+          #ifdef SAFE_BED_LEVELING_START_W
+            safe_position.w = SAFE_BED_LEVELING_START_W;
+          #endif
+
+          do_blocking_move_to(safe_position);
+        #endif
         return;
       }
       state = MeshNext;
@@ -118,9 +154,11 @@ void GcodeSuite::G29() {
       // For each G29 S2...
       if (mbl_probe_index == 0) {
         // Move close to the bed before the first point
-        do_blocking_move_to_z(0.4f
+        do_blocking_move_to_z(
           #ifdef MANUAL_PROBE_START_Z
-            + (MANUAL_PROBE_START_Z) - 0.4f
+            MANUAL_PROBE_START_Z
+          #else
+            0.4f
           #endif
         );
       }
@@ -155,8 +193,7 @@ void GcodeSuite::G29() {
         mbl_probe_index = -1;
         SERIAL_ECHOLNPGM("Mesh probing done.");
         TERN_(HAS_STATUS_MESSAGE, LCD_MESSAGE(MSG_MESH_DONE));
-        BUZZ(100, 659);
-        BUZZ(100, 698);
+        OKAY_BUZZ();
 
         home_all_axes();
         set_bed_leveling_enabled(true);
@@ -168,6 +205,7 @@ void GcodeSuite::G29() {
         #endif
 
         TERN_(LCD_BED_LEVELING, ui.wait_for_move = false);
+        TERN_(EXTENSIBLE_UI, ExtUI::onLevelingDone());
       }
       break;
 

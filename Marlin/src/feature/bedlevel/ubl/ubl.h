@@ -42,7 +42,11 @@ struct mesh_index_pair;
 #define MESH_Y_DIST (float(MESH_MAX_Y - (MESH_MIN_Y)) / (GRID_MAX_CELLS_Y))
 
 #if ENABLED(OPTIMIZED_MESH_STORAGE)
-  typedef int16_t mesh_store_t[GRID_MAX_POINTS_X][GRID_MAX_POINTS_Y];
+  #if ProUIex
+    typedef int16_t mesh_store_t[GRID_LIMIT][GRID_LIMIT];
+  #else
+    typedef int16_t mesh_store_t[GRID_MAX_POINTS_X][GRID_MAX_POINTS_Y];
+  #endif
 #endif
 
 typedef struct {
@@ -83,7 +87,7 @@ private:
   static bool smart_fill_one(const xy_uint8_t &pos, const xy_uint8_t &dir) {
     return smart_fill_one(pos.x, pos.y, dir.x, dir.y);
   }
-  static void smart_fill_mesh();
+  TERN(ProUIex, ,static void smart_fill_mesh();)
 
   #if ENABLED(UBL_DEVEL_DEBUGGING)
     static void g29_what_command();
@@ -109,6 +113,7 @@ public:
 
   static void G29() _O0;                          // O0 for no optimization
   static void smart_fill_wlsf(const_float_t ) _O2; // O2 gives smaller code than Os on A2560
+  TERN_(ProUIex, static void smart_fill_mesh();)
 
   static int8_t storage_slot;
 
@@ -117,8 +122,10 @@ public:
     static void set_store_from_mesh(const bed_mesh_t &in_values, mesh_store_t &stored_values);
     static void set_mesh_from_store(const mesh_store_t &stored_values, bed_mesh_t &out_values);
   #endif
-  static const float _mesh_index_to_xpos[GRID_MAX_POINTS_X],
-                     _mesh_index_to_ypos[GRID_MAX_POINTS_Y];
+  #if DISABLED(ProUIex)
+    static const float _mesh_index_to_xpos[GRID_MAX_POINTS_X],
+                       _mesh_index_to_ypos[GRID_MAX_POINTS_Y];
+  #endif
 
   #if HAS_MARLINUI_MENU
     static bool lcd_map_control;
@@ -287,12 +294,17 @@ public:
   }
   static float get_z_correction(const xy_pos_t &pos) { return get_z_correction(pos.x, pos.y); }
 
-  static float mesh_index_to_xpos(const uint8_t i) {
-    return i < (GRID_MAX_POINTS_X) ? pgm_read_float(&_mesh_index_to_xpos[i]) : MESH_MIN_X + i * (MESH_X_DIST);
-  }
-  static float mesh_index_to_ypos(const uint8_t i) {
-    return i < (GRID_MAX_POINTS_Y) ? pgm_read_float(&_mesh_index_to_ypos[i]) : MESH_MIN_Y + i * (MESH_Y_DIST);
-  }
+  #if ProUIex
+    static float mesh_index_to_xpos(const uint8_t i);
+    static float mesh_index_to_ypos(const uint8_t i);
+  #else
+    static float mesh_index_to_xpos(const uint8_t i) {
+      return i < (GRID_MAX_POINTS_X) ? pgm_read_float(&_mesh_index_to_xpos[i]) : MESH_MIN_X + i * (MESH_X_DIST);
+    }
+    static float mesh_index_to_ypos(const uint8_t i) {
+      return i < (GRID_MAX_POINTS_Y) ? pgm_read_float(&_mesh_index_to_ypos[i]) : MESH_MIN_Y + i * (MESH_Y_DIST);
+    }
+  #endif
 
   #if UBL_SEGMENTED
     static bool line_to_destination_segmented(const_feedRate_t scaled_fr_mm_s);

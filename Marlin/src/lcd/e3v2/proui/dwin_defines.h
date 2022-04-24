@@ -1,8 +1,8 @@
 /**
- * DWIN general defines and data structs
- * Author: Miguel A. Risco-Castillo
- * Version: 3.10.3
- * Date: 2022/02/02
+ * DWIN general defines and data structs for PRO UI
+ * Author: Miguel A. Risco-Castillo (MRISCOC)
+ * Version: 3.11.3
+ * Date: 2022/02/28
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as 
@@ -21,16 +21,51 @@
 
 #pragma once
 
-#define ProUI 1
+#define ProUIex 1
 
 //#define DEBUG_DWIN 1
 //#define NEED_HEX_PRINT 1
 
+#include "../../../inc/MarlinConfigPre.h"
+#include <stddef.h>
 #include "../../../core/types.h"
 #include "../common/dwin_color.h"
 
-#if ProUI
+#if ProUIex
   #include "proui.h"
+#endif
+
+#define HAS_ESDIAG 1
+#if MB(CREALITY_V24S1_301)
+  #define DASH_REDRAW 1
+#endif
+
+#if DISABLED(FILAMENT_RUNOUT_SENSOR)
+  #error "FILAMENT_RUNOUT_SENSOR is required with ProUI."
+#endif
+#if DISABLED(INDIVIDUAL_AXIS_HOMING_SUBMENU)
+  #error "INDIVIDUAL_AXIS_HOMING_SUBMENU is required with ProUI."
+#endif
+#if DISABLED(LCD_SET_PROGRESS_MANUALLY)
+  #error "LCD_SET_PROGRESS_MANUALLY is required with ProUI."
+#endif
+#if DISABLED(STATUS_MESSAGE_SCROLLING)
+  #error "STATUS_MESSAGE_SCROLLING is required with ProUI."
+#endif
+#if DISABLED(BAUD_RATE_GCODE)
+  #error "BAUD_RATE_GCODE is required with ProUI."
+#endif
+#if DISABLED(SOUND_MENU_ITEM)
+  #error "SOUND_MENU_ITEM is required with ProUI."
+#endif
+#if DISABLED(PRINTCOUNTER)
+  #error "PRINTCOUNTER is required with ProUI."
+#endif
+#if ENABLED(HAS_GCODE_PREVIEW) && DISABLED(ProUIex)
+  #error "HAS_GCODE_PREVIEW requires ProUIex."
+#endif
+#if ENABLED(HAS_TOOLBAR) && DISABLED(ProUIex)
+  #error "HAS_TOOLBAR requires ProUIex."
 #endif
 
 #define Def_Background_Color  RGB( 1, 12,  8)
@@ -51,31 +86,16 @@
 #define Def_Barfill_Color     BarFill_Color
 #define Def_Indicator_Color   Color_White
 #define Def_Coordinate_Color  Color_White
-
-#define HAS_GCODE_PREVIEW 1
-#define HAS_ESDIAG 1
-#ifndef INDIVIDUAL_AXIS_HOMING_SUBMENU
-  #define INDIVIDUAL_AXIS_HOMING_SUBMENU
+#define Def_Button_Color      RGB( 0, 23, 16)
+#if ENABLED(LED_CONTROL_MENU, HAS_COLOR_LEDS)
+  #define Def_Leds_Color      {255}
 #endif
-#ifndef LCD_SET_PROGRESS_MANUALLY
-  #define LCD_SET_PROGRESS_MANUALLY
-#endif
-#ifndef STATUS_MESSAGE_SCROLLING
-  #define STATUS_MESSAGE_SCROLLING
-#endif
-#ifndef BAUD_RATE_GCODE
-  #define BAUD_RATE_GCODE
-#endif
-#ifndef HAS_LCD_BRIGHTNESS
-  #define HAS_LCD_BRIGHTNESS 1
-#endif
-#define LCD_BRIGHTNESS_DEFAULT 127
-#ifndef SOUND_MENU_ITEM
-  #define SOUND_MENU_ITEM
+#if ENABLED(CASELIGHT_USES_BRIGHTNESS)
+  #define Def_CaseLight_Brightness 255
 #endif
 
 typedef struct {
-// Color settings
+  // Color settings
   uint16_t Background_Color = Def_Background_Color;
   uint16_t Cursor_color = Def_Cursor_color;
   uint16_t TitleBg_color = Def_TitleBg_color;
@@ -107,34 +127,19 @@ typedef struct {
   #if ENABLED(PREVENT_COLD_EXTRUSION)
     int16_t ExtMinT = EXTRUDE_MINTEMP;
   #endif
-  #if ENABLED(PREHEAT_BEFORE_LEVELING) && defined(PREHEAT_1_TEMP_BED)
-    int16_t BedLevT = PREHEAT_1_TEMP_BED;
-  #endif
+  int16_t BedLevT = TERN0(PREHEAT_1_TEMP_BED, PREHEAT_1_TEMP_BED);
   TERN_(BAUD_RATE_GCODE, bool Baud115K = false);
   bool FullManualTramming = false;
-  #if ProUI
-    TERN_(HAS_FILAMENT_SENSOR, bool Runout_active_state = FIL_RUNOUT_STATE);
-    #if ENABLED(NOZZLE_PARK_FEATURE)
-      xyz_int_t Park_point = DEF_NOZZLE_PARK_POINT;
-    #endif
-    int16_t x_bed_size = DEF_X_BED_SIZE;
-    int16_t y_bed_size = DEF_Y_BED_SIZE;
-    int16_t x_min_pos = DEF_X_MIN_POS;
-    int16_t y_min_pos = DEF_Y_MIN_POS;
-    int16_t x_max_pos = DEF_X_MAX_POS;
-    int16_t y_max_pos = DEF_Y_MAX_POS;
-    int16_t z_max_pos = DEF_Z_MAX_POS;
-    TERN_(HAS_MESH, uint8_t grid_max_points = DEF_GRID_MAX_POINTS);
-    #if HAS_BED_PROBE
-      float probing_margin = DEF_PROBING_MARGIN;
-      uint16_t zprobefeedslow = DEF_Z_PROBE_FEEDRATE_SLOW;
-    #endif
-    bool Invert_E0 = DEF_INVERT_E0_DIR;
-    bool FilamentMotionSensor = DEF_FIL_MOTION_SENSOR;
+  // Led
+  #ifdef MESH_BED_LEVELING
+    float ManualZOffset = 0;
+  #endif
+  #if BOTH(LED_CONTROL_MENU, HAS_COLOR_LEDS)
+    uint32_t LEDColor = Def_Leds_Color;
   #endif
 } HMI_data_t;
 
-static constexpr size_t eeprom_data_size = 96;
+static constexpr size_t eeprom_data_size = sizeof(HMI_data_t) + sizeof(PRO_data_t);
 extern HMI_data_t HMI_data;
 
 #if PREHEAT_1_TEMP_BED
@@ -142,7 +147,7 @@ extern HMI_data_t HMI_data;
   #define LEVELING_BED_TEMP HMI_data.BedLevT
 #endif
 
-#if ProUI
+#if ProUIex
   #undef X_BED_SIZE
   #undef Y_BED_SIZE
   #undef X_MIN_POS
@@ -155,30 +160,35 @@ extern HMI_data_t HMI_data;
     #undef GRID_MAX_POINTS_X
     #undef GRID_MAX_POINTS_Y
     #undef GRID_MAX_POINTS
+    #undef MESH_MIN_X
+    #undef MESH_MAX_X
+    #undef MESH_MIN_Y
+    #undef MESH_MAX_Y
   #endif
   #if HAS_BED_PROBE
-    #undef PROBING_MARGIN
     #undef Z_PROBE_FEEDRATE_SLOW
   #endif
   #undef INVERT_E0_DIR
 
-  #define X_BED_SIZE (float)HMI_data.x_bed_size
-  #define Y_BED_SIZE (float)HMI_data.y_bed_size
-  #define X_MIN_POS  (float)HMI_data.x_min_pos
-  #define Y_MIN_POS  (float)HMI_data.y_min_pos
-  #define X_MAX_POS  (float)HMI_data.x_max_pos
-  #define Y_MAX_POS  (float)HMI_data.y_max_pos
-  #define Z_MAX_POS  (float)HMI_data.z_max_pos
-  #define NOZZLE_PARK_POINT {(float)HMI_data.Park_point.x, (float)HMI_data.Park_point.y, (float)HMI_data.Park_point.z}
+  #define X_BED_SIZE (float)PRO_data.x_bed_size
+  #define Y_BED_SIZE (float)PRO_data.y_bed_size
+  #define X_MIN_POS  (float)PRO_data.x_min_pos
+  #define Y_MIN_POS  (float)PRO_data.y_min_pos
+  #define X_MAX_POS  (float)PRO_data.x_max_pos
+  #define Y_MAX_POS  (float)PRO_data.y_max_pos
+  #define Z_MAX_POS  (float)PRO_data.z_max_pos
+  #define NOZZLE_PARK_POINT {(float)PRO_data.Park_point.x, (float)PRO_data.Park_point.y, (float)PRO_data.Park_point.z}
   #if HAS_MESH
-    #define GRID_MAX_POINTS_X HMI_data.grid_max_points
-    #define GRID_MAX_POINTS_Y HMI_data.grid_max_points
-    #define GRID_MAX_POINTS (HMI_data.grid_max_points * HMI_data.grid_max_points)
+    #define GRID_MAX_POINTS_X PRO_data.grid_max_points
+    #define GRID_MAX_POINTS_Y PRO_data.grid_max_points
+    #define GRID_MAX_POINTS (PRO_data.grid_max_points * PRO_data.grid_max_points)
+    #define MESH_MIN_X PRO_data.mesh_min_x
+    #define MESH_MAX_X PRO_data.mesh_max_x
+    #define MESH_MIN_Y PRO_data.mesh_min_y
+    #define MESH_MAX_Y PRO_data.mesh_max_y
   #endif
   #if HAS_BED_PROBE
-    #define PROBING_MARGIN HMI_data.probing_margin
-    #define Z_PROBE_FEEDRATE_SLOW HMI_data.zprobefeedslow
+    #define Z_PROBE_FEEDRATE_SLOW PRO_data.zprobefeedslow
   #endif
-  #define INVERT_E0_DIR HMI_data.Invert_E0
-
-#endif
+  #define INVERT_E0_DIR PRO_data.Invert_E0
+#endif  // ProUIex

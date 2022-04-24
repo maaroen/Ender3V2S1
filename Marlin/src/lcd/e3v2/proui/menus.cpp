@@ -1,8 +1,8 @@
 /**
  * Menu functions for ProUI
  * Author: Miguel A. Risco-Castillo
- * Version: 1.1.1
- * Date: 2022/02/12
+ * Version: 1.4.1
+ * Date: 2022/04/14
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as 
@@ -29,6 +29,14 @@
 #include "dwin.h"
 #include "menus.h"
 
+int8_t MenuItemTotal = 0;
+int8_t MenuItemCount = 0;
+MenuItemClass** MenuItems = nullptr;
+MenuClass *CurrentMenu = nullptr;
+MenuClass *PreviousMenu = nullptr;
+void (*onMenuDraw)(MenuClass* menu) = nullptr;
+void (*onCursorErase)(const int8_t line)=nullptr;
+void (*onCursorDraw)(const int8_t line)=nullptr;
 MenuData_t MenuData;
 
 // Menuitem Drawing functions =================================================
@@ -42,16 +50,18 @@ void Draw_Title(TitleClass* title) {
 }
 
 void Draw_Menu(MenuClass* menu) {
-  DWINUI::SetColors(HMI_data.Text_Color, HMI_data.Background_Color);
+  DWINUI::SetColors(HMI_data.Text_Color, HMI_data.Background_Color, HMI_data.StatusBg_Color);
   DWIN_Draw_Rectangle(1, DWINUI::backcolor, 0, TITLE_HEIGHT, DWIN_WIDTH - 1, STATUS_Y - 1);
 }
 
 void Draw_Menu_Cursor(const int8_t line) {
-  DWIN_Draw_Rectangle(1, HMI_data.Cursor_color, 0, MBASE(line) - 18, 14, MBASE(line + 1) - 20);
+  const uint16_t ypos = MYPOS(line);
+  DWINUI::Draw_Box(1, HMI_data.Cursor_color, {0, ypos, 15, MLINE - 1});
 }
 
 void Erase_Menu_Cursor(const int8_t line) {
-  DWIN_Draw_Rectangle(1, HMI_data.Background_Color, 0, MBASE(line) - 18, 14, MBASE(line + 1) - 20);
+  const uint16_t ypos = MYPOS(line);
+  DWINUI::Draw_Box(1, HMI_data.Background_Color, {0, ypos, 15, MLINE - 1});
 }
 
 void Draw_Menu_Line(const uint8_t line, const uint8_t icon /*=0*/, const char * const label /*=nullptr*/, bool more /*=false*/) {
@@ -62,7 +72,7 @@ void Draw_Menu_Line(const uint8_t line, const uint8_t icon /*=0*/, const char * 
 }
 
 void Draw_Chkb_Line(const uint8_t line, const bool checked) {
-  DWINUI::Draw_Checkbox(HMI_data.Text_Color, HMI_data.Background_Color, VALX + 16, MBASE(line) - 1, checked);
+  DWINUI::Draw_Checkbox(HMI_data.Text_Color, HMI_data.Background_Color, VALX + 3 * DWINUI::fontWidth(), MBASE(line) - 1, checked);
 }
 
 void Draw_Menu_IntValue(uint16_t bcolor, const uint8_t line, uint8_t iNum, const int32_t value /*=0*/) {
@@ -119,9 +129,19 @@ void onDrawPFloat2Menu(MenuItemClass* menuitem, int8_t line) {
   onDrawFloatMenu(menuitem, line, 2, value);
 }
 
+void onDrawPFloat3Menu(MenuItemClass* menuitem, int8_t line) {
+  const float value = *(float*)static_cast<MenuItemPtrClass*>(menuitem)->value;
+  onDrawFloatMenu(menuitem, line, 3, value);
+}
+
 void onDrawChkbMenu(MenuItemClass* menuitem, int8_t line, bool checked) {
   onDrawMenuItem(menuitem, line);
   Draw_Chkb_Line(line, checked);
+}
+
+void onDrawChkbMenu(MenuItemClass* menuitem, int8_t line) {
+  const bool val = *(bool*)static_cast<MenuItemPtrClass*>(menuitem)->value;;
+  onDrawChkbMenu(menuitem, line, val);
 }
 
 //-----------------------------------------------------------------------------
@@ -144,6 +164,7 @@ void SetOnClick(uint8_t process, const int32_t lo, const int32_t hi, uint8_t dp,
   MenuData.Apply = Apply;
   MenuData.LiveUpdate = LiveUpdate;
   MenuData.Value = val;
+  LIMIT(MenuData.Value, lo, hi);
   EncoderRate.enabled = true;
 }
 
@@ -235,6 +256,7 @@ void HMI_Menu() {
 //  1 : live change
 //  2 : apply change
 int8_t HMI_GetIntNoDraw(const int32_t lo, const int32_t hi) {
+  const int32_t cval = MenuData.Value;
   EncoderState encoder_diffState = Encoder_ReceiveAnalyze();
   if (encoder_diffState != ENCODER_DIFF_NO) {
     if (Apply_Encoder(encoder_diffState, MenuData.Value)) {
@@ -243,7 +265,7 @@ int8_t HMI_GetIntNoDraw(const int32_t lo, const int32_t hi) {
       return 2;
     }
     LIMIT(MenuData.Value, lo, hi);
-    return 1;
+    return (cval != MenuData.Value) ? 1 : 0;
   }
   return 0;
 }
@@ -345,4 +367,166 @@ void HMI_SetPFloat() {
   }
 }
 
-#endif
+// Menu Classes ===============================================================
+
+MenuClass::MenuClass() {
+  selected = 0;
+  topline = 0;
+}
+
+void MenuClass::draw() {
+  MenuTitle.draw();
+  if (onMenuDraw != nullptr) onMenuDraw(this);
+  for (int8_t i = 0; i < MenuItemCount; i++)
+    MenuItems[i]->draw(i - topline);
+  if (onCursorDraw != nullptr) onCursorDraw(line());
+  DWIN_UpdateLCD();
+}
+
+void MenuClass::onScroll(bool dir) {
+  int8_t sel = selected;
+  if (dir) sel++; else sel--;
+  LIMIT(sel, 0, MenuItemCount - 1);
+  if (sel != selected) {
+    if (onCursorErase != nullptr) onCursorErase(line());
+    DWIN_UpdateLCD();
+    if ((sel - topline) == TROWS) {
+      DWIN_Frame_AreaMove(1, DWIN_SCROLL_UP, MLINE, DWINUI::backcolor, 0, TITLE_HEIGHT + 1, DWIN_WIDTH, STATUS_Y - 1);
+      topline++;
+      MenuItems[sel]->draw(TROWS - 1);
+    }
+    if ((sel < topline)) {
+      DWIN_Frame_AreaMove(1, DWIN_SCROLL_DOWN, MLINE, DWINUI::backcolor, 0, TITLE_HEIGHT + 1, DWIN_WIDTH, STATUS_Y - 1);
+      topline--;
+      MenuItems[sel]->draw(0);
+    }
+    selected = sel;
+    if (onCursorDraw != nullptr) onCursorDraw(line());
+    DWIN_UpdateLCD();
+  }
+}
+
+void MenuClass::onClick() {
+  if (MenuItems[selected]->onClick != nullptr) (*MenuItems[selected]->onClick)(); 
+}
+
+MenuItemClass *MenuClass::SelectedItem() {
+  return MenuItems[selected];
+}
+
+MenuItemClass** MenuClass::Items() {
+  return MenuItems;
+}
+
+int8_t MenuClass::count() { 
+  return MenuItemCount; 
+};
+
+/* MenuItem Class ===========================================================*/
+
+MenuItemClass::MenuItemClass(uint8_t cicon, const char * const text, void (*ondraw)(MenuItemClass* menuitem, int8_t line), void (*onclick)()) {
+  icon = cicon;
+  onClick = onclick;
+  onDraw = ondraw;
+  const uint8_t len = _MIN(sizeof(caption) - 1, strlen(text));
+  memcpy(&caption[0], text, len);
+  caption[len] = '\0';
+}
+
+MenuItemClass::MenuItemClass(uint8_t cicon, uint8_t id, uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, void (*ondraw)(MenuItemClass* menuitem, int8_t line), void (*onclick)()) {
+  icon = cicon;
+  onClick = onclick;
+  onDraw = ondraw;
+  caption[0] = '\0';
+  frameid = id;
+  frame = { x1, y1, x2, y2 };
+}
+
+void MenuItemClass::SetFrame(uint8_t id, uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2) {
+  caption[0] = '\0';
+  frameid = id;
+  frame = { x1, y1, x2, y2 };
+}
+
+void MenuItemClass::draw(int8_t line) {
+  if (line < 0 || line >= TROWS) return;
+  if (onDraw != nullptr) (*onDraw)(this, line);
+};
+
+void MenuItemClass::redraw() {
+  draw(CurrentMenu->line(this->pos));
+}
+
+MenuItemPtrClass::MenuItemPtrClass(uint8_t cicon, const char * const text, void (*ondraw)(MenuItemClass* menuitem, int8_t line), void (*onclick)(), void* val) : MenuItemClass(cicon, text, ondraw, onclick) {
+  value = val;
+};
+
+// Menu auxiliary functions ===================================================
+
+void MenuItemsClear() {
+  if (MenuItems == nullptr) return;
+  for (int8_t i = 0; i < MenuItemCount; i++) delete MenuItems[i];
+  delete[] MenuItems;
+  MenuItems = nullptr;
+  MenuItemCount = 0;
+  MenuItemTotal = 0;
+}
+
+void MenuItemsPrepare(int8_t totalitems) {
+  MenuItemsClear();
+  MenuItemTotal = totalitems;
+  MenuItems = new MenuItemClass*[totalitems];
+}
+
+MenuItemClass* MenuItemsAdd(MenuItemClass* menuitem) {
+  MenuItems[MenuItemCount] = menuitem;
+  menuitem->pos = MenuItemCount++;
+  return menuitem;
+}
+
+MenuItemClass* MenuItemsAdd(uint8_t cicon, const char * const text/*=nullptr*/, void (*ondraw)(MenuItemClass* menuitem, int8_t line)/*=nullptr*/, void (*onclick)()/*=nullptr*/) {
+  if (MenuItemCount < MenuItemTotal) {
+    MenuItemClass* menuitem = new MenuItemClass(cicon, text, ondraw, onclick);
+    return MenuItemsAdd(menuitem);
+  }
+  else return nullptr;
+}  
+
+MenuItemClass* MenuItemsAdd(uint8_t cicon, uint8_t id, uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, void (*ondraw)(MenuItemClass* menuitem, int8_t line)/*=nullptr*/, void (*onclick)()/*=nullptr*/) {
+  if (MenuItemCount < MenuItemTotal) {
+    MenuItemClass* menuitem = new MenuItemClass(cicon, id, x1, y1, x2, y2, ondraw, onclick);
+    return MenuItemsAdd(menuitem);
+  }
+  else return nullptr;
+}  
+
+MenuItemClass* MenuItemsAdd(uint8_t cicon, const char * const text, void (*ondraw)(MenuItemClass* menuitem, int8_t line), void (*onclick)(), void* val) {
+  if (MenuItemCount < MenuItemTotal) {
+    MenuItemClass* menuitem = new MenuItemPtrClass(cicon, text, ondraw, onclick, val);
+    return MenuItemsAdd(menuitem);
+  }
+  else return nullptr;
+}
+
+bool SetMenu(MenuClass* &menu, FSTR_P title, int8_t totalitems) {
+  if (!menu) menu = new MenuClass();
+  const bool NotCurrent = (CurrentMenu != menu);
+  if (NotCurrent) {
+    menu->MenuTitle.SetCaption(title);
+    MenuItemsPrepare(totalitems);
+  }
+  return NotCurrent;
+}
+
+void UpdateMenu(MenuClass* &menu) {
+  if (!menu) return;
+  if (CurrentMenu != menu) {
+    PreviousMenu = CurrentMenu;
+    CurrentMenu = menu;
+  }
+  menu->draw();
+}
+
+void ReDrawMenu() { if (CurrentMenu && checkkey==Menu) CurrentMenu->draw(); }
+
+#endif // DWIN_LCD_PROUI
